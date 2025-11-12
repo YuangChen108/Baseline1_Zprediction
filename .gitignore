@@ -1,0 +1,20 @@
+# 忽略 Catkin/ROS workspace 相关的构建和安装目录
+build/
+devel/
+install/
+.catkin_tools/
+.catkin_workspace
+CMakeLists.txt
+
+# 忽略临时和编译生成的文件类型
+# Linux/Unix 共享对象和库
+*.so
+*.a
+# Windows 库
+*.dll
+*.lib
+# 可执行文件
+*.exe
+# 缓存/日志文件
+*.log
+*.bak
