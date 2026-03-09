@@ -17,6 +17,7 @@ namespace traj_opt {
 
 class TrajOpt {
  public:
+  double z_floor_limit_ = -1000.0; // 记录 Z 轴下界
   std::shared_ptr<map_interface::MapInterface> gridmapPtr_;
   std::shared_ptr<vis_interface::VisInterface> visPtr_;
   bool pause_debug_ = false;
@@ -269,7 +270,8 @@ class TrajOpt {
                      const Eigen::Quaterniond& land_q,
                      const int& N,
                      Trajectory<7>& traj, 
-                     const double& t_replan = -1.0);
+                     const double& t_replan = -1.0,
+                     const double& z_floor_limit = -1000.0);
 
   // landing-yaw traj generation
   bool generate_traj(const Eigen::MatrixXd& iniState,

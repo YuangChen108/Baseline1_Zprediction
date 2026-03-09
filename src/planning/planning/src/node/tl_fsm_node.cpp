@@ -196,7 +196,6 @@ bool TLFSM::judge_to_track(const Eigen::Vector3d& odom_p, const Eigen::Vector3d&
 
 
 bool TLFSM::judge_to_stop(){
-    //! obtain traj
     TrajData traj_data;
     if (!dataManagerPtr_->get_traj(dataManagerPtr_->traj_info_, traj_data)){
         return false;
@@ -205,7 +204,6 @@ bool TLFSM::judge_to_stop(){
         return false;
     }
 
-    // 1. 获取当前飞机和船的真实状态
     Odom odom_data, target_data;
     if (!dataManagerPtr_->get_odom(dataManagerPtr_->odom_info_, odom_data) || 
         !dataManagerPtr_->get_car_odom(target_data)) {
@@ -217,13 +215,12 @@ bool TLFSM::judge_to_stop(){
     Eigen::Vector3d drone_v = odom_data.odom_v_;
     Eigen::Vector3d boat_v  = target_data.odom_v_;
 
-    // ==================== 🛠️ 补回：导出实际飞行轨迹 (高频记录) ====================
-    // 因为 FSM 在 LAND 阶段是 100Hz 运行的，所以这里会密密麻麻地记录下飞机的真实红线
+    // ==================== 🛠️ 找回实际飞行轨迹 (高频记录) ====================
     std::string real_path = "/home/Quadrotor-Landing-with-Minco/actual_traj.csv";
     std::ofstream real_file(real_path, std::ios::out | std::ios::app);
     if (real_file.is_open()) {
         real_file.seekp(0, std::ios::end);
-        if (real_file.tellp() == 0) { // 空文件时写表头
+        if (real_file.tellp() == 0) { 
             real_file << "SysTime,Real_UAV_X,Real_UAV_Y,Real_UAV_Z,Real_Boat_X,Real_Boat_Y,Real_Boat_Z\n";
         }
         real_file << ros::Time::now().toSec() << ","
@@ -237,7 +234,6 @@ bool TLFSM::judge_to_stop(){
     double dist_xy = (drone_p.head(2) - boat_p.head(2)).norm();
     double rel_speed = (drone_v - boat_v).norm();
 
-    // ==================== 🛠️ 记录降落状态的小工具 (单次记录) ====================
     auto record_landing_state = [&](bool is_success, const std::string& reason) {
         std::string state_path = "/home/Quadrotor-Landing-with-Minco/landing_states.csv";
         std::ofstream state_file(state_path, std::ios::out | std::ios::app);
@@ -254,16 +250,15 @@ bool TLFSM::judge_to_stop(){
             state_file.close();
         }
     };
-    // =========================================================================
 
-    // 3. 判断条件
     TimePoint sample_time = TimeNow();
     double t = durationSecond(sample_time, traj_data.start_time_);
     bool time_is_up = (traj_data.getTotalDuration() < 1.5 && t > traj_data.getTotalDuration() - 0.05);
 
     // 4. 逻辑 A：时间到了，结算这次降落
     if (time_is_up) {
-        if (dist_xy < 0.25 && rel_speed < 1.5) { 
+        // 🚨 核心修复：加上 dist_z < 0.30！绝对不允许在天上判成功！
+        if (dist_xy < 0.25 && dist_z < 0.30 && rel_speed < 1.5) { 
             INFO_MSG_RED("[FSM] 降落完美！对准且速度稳定。Z_err: " << dist_z);
             if (planner_) planner_->saveLandingData(odom_data, target_data, true); 
             dataManagerPtr_->save_end_landing(TimeNow(), dataManagerPtr_->traj_info_);
@@ -271,17 +266,16 @@ bool TLFSM::judge_to_stop(){
             INFO_MSG_RED("[FSM] STOP Propeller!");
             return true;
         } else {
-            INFO_MSG_YELLOW("[FSM] 降落失败！水平误差: " << dist_xy << "m, 相对速度: " << rel_speed << "m/s");
+            INFO_MSG_YELLOW("[FSM] 降落失败！水平误差: " << dist_xy << "m, 高度误差: " << dist_z << "m");
             if (planner_) planner_->saveLandingData(odom_data, target_data, false); 
             record_landing_state(false, "Timeout_Fail");
             return true; 
         }
     }
 
-    // 5. 逻辑 B：防砸甲板（时间没到，但已经贴脸了）
+    // 5. 逻辑 B：提前防砸甲板
     if (dist_z < 0.20 && dist_xy < 0.25 && rel_speed < 1.5) {
-        ROS_INFO_STREAM("\033[1;32m[FSM] 真正满足物理条件！XY误差:" << dist_xy << " 记录Success=1\033[0m");
-        INFO_MSG_RED("[FSM] 提前安全触地！");
+        ROS_INFO_STREAM("\033[1;32m[FSM] 提前安全触地！记录Success=1\033[0m");
         if (planner_) planner_->saveLandingData(odom_data, target_data, true); 
         record_landing_state(true, "Early_Touchdown");
         return true;

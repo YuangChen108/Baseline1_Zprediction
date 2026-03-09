@@ -200,8 +200,10 @@ bool TrajOpt::generate_traj(const Eigen::MatrixXd& iniState,
                             const Eigen::Quaterniond& land_q,
                             const int& N,
                             Trajectory<7>& traj,
-                            const double& t_replan) {                 
+                            const double& t_replan,
+                            const double& z_floor_limit) {                 
   INFO_MSG("------seg: " << N);
+  z_floor_limit_ = z_floor_limit;
   N_ = N;
   dim_t_ = 1;
   dim_p_ = N_ - 1;
@@ -833,7 +835,25 @@ void TrajOpt::addTimeIntPenaltyLanding(double& cost) {
       totalGradVel.setZero();
       totalGradAcc.setZero();
       totalGradJer.setZero();
-
+      // =========================================================================
+      // 🌟 新增核心逻辑：强制 Z 轴下界 (Z-floor Hard Constraint)
+      // 如果我们传入了有效的下界参数（大于 -900），则激活惩罚
+      if (z_floor_limit_ > -900.0) { 
+        if (pos.z() < z_floor_limit_) {
+            double violation = z_floor_limit_ - pos.z();
+            double weight_z = 10000.0; // 极大的惩罚权重 (可调，10000 已经足够产生一堵"气墙")
+            
+            // 计算三次多项式代价值
+            double cost_z = weight_z * violation * violation * violation;
+            // 计算针对 z 坐标的梯度 (求导)
+            double grad_z = -3.0 * weight_z * violation * violation; 
+            
+            // 累加到这一个采样点的总代价和梯度中
+            cost_inner += cost_z;
+            grad_p.z() += grad_z; 
+        }
+      }
+      // =========================================================================
       if (grad_cost_floor(pos, grad_tmp, cost_tmp)) {
         grad_p += grad_tmp;
         cost_inner += cost_tmp;

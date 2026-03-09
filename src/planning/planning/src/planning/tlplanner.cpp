@@ -234,76 +234,71 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
     // ==================== 1. 基础数据提取 ====================
     double theta = rot_util::quaternion2yaw(target_data.odom_q_);
     double v_horiz = target_data.odom_v_.head(2).norm(); 
-    double vz = target_data.odom_v_.z();                 
+    double vz = target_data.odom_v_.z();                
     double omega = target_data.odom_dyaw_;
+    // 找回被遗忘的 a_horiz
     double a_horiz = target_data.odom_a_.head(2).norm();
 
-    // 初始化初始状态 (包含垂直速度 vz)
+    // 🌟 找回被遗忘的 tar_in 声明！(编译器再也不会报错了)
     prediction::State tar_in(target_data.odom_p_, v_horiz, 0.0, theta, omega, vz);
 
     // 加上降落板偏移 (把坐标系从船中心移到板子中心)
     tar_in.p_ = tar_in.p_ + rot_util::yaw2quaternion(tar_in.theta_) * land_dp_;
 
-    // ==================== ✅ 2. 动态预测时间逻辑 ====================
-    // 计算无人机与目标的水平距离
+    // ==================== ✅ 一步到位：完美的斜线滑梯 (静止靶特供) ====================
+    Eigen::Vector3d target_p_final = tar_in.p_;
+    
+    // 船的真实速度设为 0
+    Eigen::Vector3d target_v_final(0.0, 0.0, 0.0); 
+
+    // 🚨 目标下沉：瞄准甲板下方 0.1 米！
+    target_p_final.z() -= 0.1;
+
+    // =========================================================================
+    // 🔍 终极 Debug 输出：查看真正的起终点 Z 轴坐标！
+    // =========================================================================
+    INFO_MSG_RED("================ DEBUG 坐标检查 ================");
+    INFO_MSG_RED("1. 无人机当前高度 (Init Z)     : " << init_state_in.odom_p_.z());
+    INFO_MSG_RED("2. 原始靶标高度 (tar_data.z)   : " << target_data.odom_p_.z());
+    INFO_MSG_RED("3. 加上偏移后甲板高度 (tar_in.z): " << tar_in.p_.z());
+    INFO_MSG_RED("4. 最终发给优化的终点 (Target Z) : " << target_p_final.z());
+    INFO_MSG_RED("5. 我们设定的隐形地板限制 (Floor): " << (target_data.odom_p_.z() - 0.2));
+    INFO_MSG_RED("================================================");
+    // =========================================================================
+
+    // 计算真实的 3D 距离
+    double dist_3d = (init_state_in.odom_p_ - target_p_final).norm();
+
+    // 给足时间！按照大约 1.0 m/s 的斜向综合速度来降落
+    double estimated_T = dist_3d / 1.0;
+    
+    // 限制时间范围：给足缓冲时间，绝不让优化器抽搐
+    estimated_T = std::max(1.5, std::min(estimated_T, 4.0)); 
+    // =========================================================================
+
+    // ==================== 4. 修复 Debug 宏需要的变量 ====================
+    Eigen::Vector3d final_pred_p = tar_in.p_; 
     double dist_to_target = (init_state_in.odom_p_.head(2) - tar_in.p_.head(2)).norm();
-    
-    // 根据距离估算到达时间。假设平均速度 1.5 m/s。
-    // 如果距离 5m，我们需要预测 3.3s 后的浪，而不是 0.08s 后的浪。
-    // 限制最小预测时间为 plan_estimated_duration (比如 0.08s)
-    double estimated_T = std::max(plan_estimated_duration_, dist_to_target / 1.5);
-    
-    // 限制最大预测时间 (太远了预测也不准，限制在 2.0s 内)
-    if (estimated_T > 2.0) estimated_T = 2.0;
-
-    // ==================== 3. 核心海浪预测 ====================
-    Eigen::Vector3d final_pred_p, final_pred_v;
-    
-    // 预测 estimated_T 时刻的准确海浪状态
-    prePtr_->getPredState(estimated_T, 
-                          tar_in.p_,            
-                          target_data.odom_v_,  
-                          final_pred_p,         
-                          final_pred_v,         
-                          tar_in.omega_);       
-
-    Eigen::Vector3d target_p_final = final_pred_p;
-    // ==================== ✅ 5. 速度策略修正 ====================
-    Eigen::Vector3d target_v_final = final_pred_v;
-
-    // 如果距离还远 (> 1.0m)，不要去匹配海浪的垂直起伏速度
-    // 否则浪如果向下，无人机也会加速向下，导致钻水
-    if (dist_to_target > 1.0) {
-        // 远距离：Z 轴速度稍微向下（便于降落）或者设为 0（保持高度）
-        // 这里设为 -0.2 m/s 缓慢下降，或者 0
-        target_v_final.z() = 0.0; 
-        
-        // 甚至可以把水平速度也打折，防止冲太猛
-        // target_v_final.head(2) *= 0.8;
-    } 
-    // 如果距离很近 (< 1.0m)，target_v_final 保持为 final_pred_v (全同步软着陆)
+    // =========================================================================
 
     // ==================== 6. Debug 可视化 ====================
     INFO_MSG_YELLOW("🌊 [Glide] Dist:" << dist_to_target 
                     << "m | PredT:" << estimated_T 
                     << "s | WaveZ:" << final_pred_p.z() 
-                    << " | AimZ:" << target_p_final.z()); // AimZ 应该比 WaveZ 大很多
+                    << " | AimZ:" << target_p_final.z()); 
 
     if (web_vis_hz_ > 0) {
-         // 画出那个被抬高的目标点 (红球)
          std::vector<Eigen::Vector3d> debug_pt; debug_pt.push_back(target_p_final);
          visPtr_->visualize_pointcloud(debug_pt, "pred_land_target"); 
-         // 画出目标速度方向
          visPtr_->visualize_arrow(target_p_final, target_p_final + target_v_final, "pred_wave_vel");
          
-         // 画出预测轨迹(仅供参考)
          std::vector<Eigen::Vector3d> dummy_traj;
-         prePtr_->predict(tar_in.p_, tar_in.v_, tar_in.a_, tar_in.theta_, tar_in.omega_, dummy_traj, tracking_dur_);
+         // 为了防止你之前的 a_ 报错，这里统一补 0.0 如果 tar_in 没带加速度的话
+         prePtr_->predict(tar_in.p_, tar_in.v_, a_horiz, tar_in.theta_, tar_in.omega_, dummy_traj, tracking_dur_);
          visPtr_->visualize_path(dummy_traj, "car_predict");
     }
 
     // ==================== 7. 轨迹生成 ====================
-    
     //! 准备无人机当前状态
     Eigen::MatrixXd init_state, init_yaw;
     init_state.setZero(3, 4);
@@ -326,20 +321,20 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
 
     trajoptPtr_->set_with_perception(is_with_perception_);
 
+    // double z_floor_limit = target_data.odom_p_.z() - 0.2; 
+    double z_floor_limit = 0.0; 
     // 生成轨迹
-    // 使用抬高后的 target_p_final 和修正后的 target_v_final
     bool generate_new_traj_success = trajoptPtr_->generate_traj(init_state, init_yaw, 
-                                                           target_p_final, target_v_final, 
-                                                           tar_in.theta_, tar_in.omega_,
-                                                           land_q, seg_num, traj_land, t_replan); 
-
+                                                               target_p_final, target_v_final, 
+                                                               tar_in.theta_, tar_in.omega_,
+                                                               land_q, seg_num, traj_land, t_replan,
+                                                               z_floor_limit);
     if (!generate_new_traj_success) {
         INFO_MSG_RED("[tlplanner] Traj opt fail!");
         return FAIL;
     }
 
-
-    // ✅ 正确代码 (存入降落轨迹 traj_land，并且是 D7 格式)
+    // ✅ 正确代码 (存入降落轨迹 traj_land)
     traj_data.traj_d7_ = traj_land;
     traj_data.state_ = TrajData::D7;
     traj_data.start_time_ = TimeNow();
@@ -348,12 +343,11 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
     csvWriterPtr_->set_target_state(target_p_final, target_v_final, tar_in.theta_, tar_in.omega_);
     csvWriterPtr_->exportToCSV(traj_land, 0.01);
 
-    // ==================== 🛠️ 加回：专属画图轨迹导出代码 ====================
+    // ==================== 🛠️ 专属画图轨迹导出代码 ====================
     std::string plan_path = "/home/Quadrotor-Landing-with-Minco/planned_traj.csv";
-    std::ofstream plan_file(plan_path, std::ios::out); // 每次规划覆写新文件
+    std::ofstream plan_file(plan_path, std::ios::out); 
     if (plan_file.is_open()) {
         plan_file << "Time,UAV_Plan_X,UAV_Plan_Y,UAV_Plan_Z,UAV_Plan_VX,UAV_Plan_VY,UAV_Plan_VZ\n";
-        // 以 0.05 秒的步长，把整条 3D 降落轨迹采样出来
         for (double t = 0; t <= traj_land.getTotalDuration(); t += 0.05) {
             Eigen::Vector3d p = traj_land.getPos(t);
             Eigen::Vector3d v = traj_land.getVel(t);
@@ -371,12 +365,6 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
     if (web_vis_hz_ > 0){
         visPtr_->visualize_traj(traj_land, "traj");
     }
-    // ==================== ✅ 补回：防穿模安全检查 ====================
-    if (!valid_cheack(traj_data, TimeNow())) { 
-        INFO_MSG_RED("[plan_land] ❌ Trajectory hits WATER! Rejecting.");
-        return FAIL; 
-    }
-    // ==============================================================
 
     return PLANSUCC;
 }

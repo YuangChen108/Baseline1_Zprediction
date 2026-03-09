@@ -55,7 +55,7 @@ prediction/acc_filter_t: 0.9
 prediction/pause_debug: 0
 prediction/wave_freq: 1.0  
 prediction/z_mean: 0.0
-# prediction/wave_amp: 0.3 这一项在fake_boat.py脚本中定义为私有参数，模拟和预测是分开进行的，不需要这个全局参数。
+# prediction/wave_amp: 0.3 这一项在fake_boat.py脚本中定义为私有参数，模拟和预测。
 
 filter_t_k: 1.0
 filter_q_k: 0.7
@@ -117,7 +117,8 @@ land_p_x: 0.0
 land_p_y: 0.0
 land_p_z: 0.0
 land_roll: 0.0
-land_pitch: -1.5
+# land_pitch: -1.5
+land_pitch: 0.0
 # land_z_min: 0.7
 land_z_down_relative: 0.5
 land_z_up_relative: 1.5
