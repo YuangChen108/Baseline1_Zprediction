@@ -4,7 +4,7 @@ devel/
 install/
 .catkin_tools/
 .catkin_workspace
-CMakeLists.txt
+
 
 # 忽略临时和编译生成的文件类型
 # Linux/Unix 共享对象和库
