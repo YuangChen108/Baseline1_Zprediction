@@ -5,9 +5,9 @@ import signal
 import sys
 
 # ================= 配置区域 =================
-TOTAL_RUNS = 1          # 总共跑多少次
+TOTAL_RUNS = 1        # 总共跑多少次
 INIT_WAIT_TIME = 5       # 启动ROS节点后等待初始化的时间 (秒)
-SIM_DURATION = 25        # 每次实验运行的最长时间 (确保足够降落)
+SIM_DURATION = 10        # 每次实验运行的最长时间 (确保足够降落)
 LOG_FILE = "batch_test_log.txt" # 简单的运行日志
 # ===========================================
 

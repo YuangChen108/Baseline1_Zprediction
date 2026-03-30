@@ -53,7 +53,7 @@ prediction/omega_filter_t: 0.5
 prediction/acc_max: 1.5
 prediction/acc_filter_t: 0.9
 prediction/pause_debug: 0
-prediction/wave_freq: 1.0  
+prediction/wave_freq: 2.0  
 prediction/z_mean: 0.0
 # prediction/wave_amp: 0.3 这一项在fake_boat.py脚本中定义为私有参数，模拟和预测。
 
@@ -90,7 +90,7 @@ is_use_viewpoint: 0
 plan_estimated_duration: 0.08
 land_no_plan_time: 0.1
 short_mode_time: 0.2
-tracking_height_expect: 2.0
+tracking_height_expect: 4.0
 tracking_dis_expect: 2.0 
 tracking_angle_expect: -3.14
 tracking_dur: 3.0

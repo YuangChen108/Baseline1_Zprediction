@@ -8,8 +8,8 @@ import numpy as np
 import os
 
 # 文件路径 (确保和你在 C++ 里写的一致)
-PLAN_FILE = "/home/Quadrotor-Landing-with-Minco/planned_traj.csv"
-REAL_FILE = "/home/Quadrotor-Landing-with-Minco/actual_traj.csv"
+PLAN_FILE = "/home/Quadrotor-Landing-with-Minco/experiments_data/planned_traj.csv"
+REAL_FILE = "/home/Quadrotor-Landing-with-Minco/experiments_data/actual_traj.csv"
 
 def main():
     if not os.path.exists(PLAN_FILE) or not os.path.exists(REAL_FILE):

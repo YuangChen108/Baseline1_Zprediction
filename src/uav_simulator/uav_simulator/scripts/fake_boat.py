@@ -47,7 +47,7 @@ def fake_boat():
         z_mean = 0.0
 
     # 4. 读取海浪振幅
-    wave_amp = rospy.get_param('~wave_amp', 0.3) 
+    wave_amp = rospy.get_param('~wave_amp', 0.8) 
     
     rospy.loginfo(f"Boat Params: Vel={velocity}, Freq={wave_freq}, Amp={wave_amp}, Z_Mean={z_mean}")
     
