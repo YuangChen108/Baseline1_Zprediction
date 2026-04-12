@@ -100,6 +100,8 @@ void DataCallBacks::init_ros(ros::NodeHandle& nh){
 
     // 3. 传参调用
     dataManagerPtr_->car_ekf_ptr_->update_p_state_diff_v(target_p, target_v_real, update_timestamp);
+    dataManagerPtr_->raw_boat_z_.store(msgPtr->pose.pose.position.z);
+    dataManagerPtr_->raw_boat_vz_.store(msgPtr->twist.twist.linear.z);
 
 }
   void DataCallBacks::goal_callback(const geometry_msgs::PoseStampedConstPtr& msgPtr){

@@ -19,6 +19,8 @@ chmod +x sh_utils/pub_triger.sh
 chmod +x sh_utils/land_triger.sh
 roslaunch mapping rviz_sim.launch
 ```
+>时钟同步
+find . -type f -exec touch {} +
 
 >A small drone with the global map as the chasing target:
 ```

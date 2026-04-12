@@ -2,6 +2,50 @@
 using rot_util = rotation_util::RotUtil;
 
 namespace tlplanner{
+// ==================== 🚀 预留给 LSTM 的数据接口 ====================
+struct ZPredictionRes {
+    double intercept_z;               // 截击点的预测高度 (例如 0.08s 后的高度)
+    double intercept_vz;              // 截击点的预测垂直速度
+    std::vector<double> future_z_seq; // 未来 3.0s 的预测高度序列
+};
+// 外部预测调用函数 (目前使用简谐振动物理模型同步 Python 仿真真值，未来替换为 LSTM)
+ZPredictionRes get_external_z_prediction(double current_z, double current_vz, double estimated_T, double total_dur, double dt) {
+    ZPredictionRes res;
+    
+    // ==========================================
+    // 【仿真环境参数同步】
+    // ⚠️ 这里的 wave_omega 必须和你 Python 脚本跑出来的 wave_freq 一模一样！
+    // 假设你的 Python 里 wave_freq 设的是 1.013 (rad/s)
+    double wave_omega = 1.013; 
+    double mock_z_mean = 0.0; // 假设你的 z_mean 是 0.0
+    // ==========================================
+
+    if (std::abs(wave_omega) < 1e-4) wave_omega = 1e-4; // 防止除以 0
+
+    // 计算相对于平衡位置的偏移量
+    double dz0 = current_z - mock_z_mean;
+    double vz0 = current_vz;
+
+    // 1. 预测截击点状态 (t = estimated_T)
+    // 根据简谐振动解析解：
+    // Z(t) = Z0 * cos(w*t) + (V0/w) * sin(w*t)
+    // V(t) = -Z0 * w * sin(w*t) + V0 * cos(w*t)
+    res.intercept_z = mock_z_mean + dz0 * std::cos(wave_omega * estimated_T) + (vz0 / wave_omega) * std::sin(wave_omega * estimated_T); 
+    res.intercept_vz = -dz0 * wave_omega * std::sin(wave_omega * estimated_T) + vz0 * std::cos(wave_omega * estimated_T); 
+    
+    // 2. 生成未来序列
+    int pts_num = std::max(1, (int)(total_dur / dt));
+    for (int i = 0; i < pts_num; ++i) {
+        double t_future = i * dt;
+        // 算出未来每一个时间步的真实高度
+        double future_z = mock_z_mean + dz0 * std::cos(wave_omega * t_future) + (vz0 / wave_omega) * std::sin(wave_omega * t_future);
+        res.future_z_seq.push_back(future_z); 
+    }
+    
+    return res;
+}
+// =================================================================
+
 TLPlanner::TLPlanner(std::shared_ptr<parameter_server::ParaeterSerer>& para_ptr):paraPtr_(para_ptr){
     paraPtr_->get_para("Webvis_hz", web_vis_hz_);   
     paraPtr_->get_para("is_use_viewpoint", is_use_viewpoint_);   
@@ -307,14 +351,32 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
     }
     // =======================================================================
 
-    // ==================== ✅ 核心“压路机” (降落目标：高度 0.0) ====================
-    // 目标高度为降落板实际高度
-    double flat_land_z = tar_in.p_.z(); 
-    
-    for (auto& pt : target_predcit) {
-        pt.z() = flat_land_z;
+    // ==================== 🚀 核心：接入外部 Z 轴动态预测 (LSTM 预留) ====================
+    // 从底层 target_data 中提取真实的当前高度与垂直速度
+    double current_boat_z = tar_in.p_.z();
+    double current_boat_vz = target_data.odom_v_.z(); 
+
+    // 调用我们在上面写好的接口
+    ZPredictionRes z_pred_result = get_external_z_prediction(
+        current_boat_z, 
+        current_boat_vz, 
+        plan_estimated_duration_, 
+        tracking_dur_, 
+        tracking_dt_
+    );
+
+    // 1. 将预测出的未来 Z 轴高度序列，注入到目标预测阵列中 (CYRA 给出的 2D 骨架在此获得了高度)
+    for (size_t i = 0; i < target_predcit.size(); ++i) {
+        if (i < z_pred_result.future_z_seq.size()) {
+            target_predcit[i].z() = z_pred_result.future_z_seq[i];
+        } else {
+            target_predcit[i].z() = z_pred_result.future_z_seq.back(); // 兜底保护
+        }
     }
-    tar.p_.z() = flat_land_z;
+    
+    // 2. 更新最终截击点 (tar) 的 Z 轴状态
+    tar.p_.z() = z_pred_result.intercept_z;
+    tar.vz_ = z_pred_result.intercept_vz;
     // =======================================================================
 
     //! 3. get inital state
@@ -347,19 +409,22 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
     final_state.setZero(3, 4);
     final_yaw.setZero(1, 2);
 
+    // 🚀 A* 路径的高度下限清洗（使用最新的预测拦截点兜底，防止 A* 寻路钻入水下）
     for (auto& pt : path) {
-        pt.z() = std::max(pt.z(), flat_land_z);
+        pt.z() = std::max(pt.z(), z_pred_result.intercept_z);
     }
     
     final_state.col(0) = path.back(); 
+    final_state.col(0).z() = tar.p_.z(); // 此时的 tar.p_.z() 已经是 LSTM 预测的结果
     
-    // ==================== 🚀 预期末端速度约束 (Baseline 开关控制) ====================
+    // ==================== 🚀 预期末端速度约束 ====================
     if (use_prediction_logic) {
-        final_state.col(1) = Eigen::Vector3d(tar.v_*cos(tar.theta_), tar.v_*sin(tar.theta_), 0.0);
+        // 同时赋予水平速度和垂直速度 (彻底激活 3D 动态截击)
+        final_state.col(1) = Eigen::Vector3d(tar.v_*cos(tar.theta_), tar.v_*sin(tar.theta_), tar.vz_);
     } else {
         final_state.col(1) = Eigen::Vector3d(0.0, 0.0, 0.0);
     }
-    // =======================================================================
+    // ==========================================================
     
     final_yaw(0, 0) = tar.theta_;
     
@@ -414,7 +479,7 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
     static double run_id = time_sec; 
 
     static std::ofstream detail_file;
-    const std::string file_path = "/home/Quadrotor-Landing-with-Minco/experiments_data/landing_deep_analysis.csv";
+    const std::string file_path = "/home/Baseline1_PhaseSelection/experiments_data/landing_deep_analysis.csv";
     
     std::ifstream check_file(file_path);
     bool file_exists = check_file.good();
@@ -444,7 +509,7 @@ TLPlanner::PlanResState TLPlanner::plan_land(const Odom& init_state_in, const Od
     // ==================== 7. Bag 与 Web 记录 ====================
     csvWriterPtr_->set_target_state(target_p_final, target_v_final, target_theta_final, target_omega_final);
 
-    std::string plan_path = "/home/Quadrotor-Landing-with-Minco/experiments_data/planned_traj.csv";
+    std::string plan_path = "/home/Baseline1_PhaseSelection/experiments_data/planned_traj.csv";
     std::ofstream plan_file(plan_path, std::ios::out); 
     if (plan_file.is_open()) {
         plan_file << "Time,UAV_Plan_X,UAV_Plan_Y,UAV_Plan_Z,UAV_Plan_VX,UAV_Plan_VY,UAV_Plan_VZ\n";

@@ -124,7 +124,7 @@ static void CYRV_model(const Eigen::Vector3d& p0, const Eigen::Vector3d& v0, con
 
   // ==================== 2. 垂直 (Z) 轴逻辑 (简谐波与时空耦合梯度) ====================
   // 使用我们在 generate_traj 里刚刚读取到的内部静态变量
-  double w = 2.0 * M_PI * wave_freq_;
+  double w = wave_freq_;
   if (std::abs(w) < 1e-4) w = 1e-4; // 防止除 0 导致矩阵爆炸
 
   double dz = p0.z() - z_mean_;

@@ -4,7 +4,7 @@ using rot_util = rotation_util::RotUtil;
 TLFSM::TLFSM(){
     #ifdef ROS
     para_ptr_ = std::make_shared<parameter_server::ParaeterSerer>(
-        "/home/Quadrotor-Landing-with-Minco/src/planning/planning/config/config.yaml");
+        "/home/Baseline1_PhaseSelection/src/planning/planning/config/config.yaml");
     #endif
     #ifdef SS_DBUS
     para_ptr_ = std::make_shared<parameter_server::ParaeterSerer>(
@@ -225,7 +225,7 @@ bool TLFSM::judge_to_stop(){
 
     // ==================== 🛠️ 记录逻辑 (Lambda) ====================
     auto record_landing_state = [&](bool is_success, const std::string& reason) {
-        std::string state_path = "/home/Quadrotor-Landing-with-Minco/experiments_data/landing_states.csv";
+        std::string state_path = "/home/Baseline1_PhaseSelection/experiments_data/landing_states.csv";
         std::ofstream state_file(state_path, std::ios::out | std::ios::app);
         if (state_file.is_open()) {
             state_file << ros::Time::now().toSec() << ","
@@ -275,7 +275,7 @@ bool TLFSM::judge_to_stop(){
     // 2. 超时结算
     TimePoint sample_time = TimeNow();
     double t_elapsed = durationSecond(sample_time, traj_data.start_time_);
-    double safe_timeout = 2.5; 
+    double safe_timeout = 5; 
 
     if (t_elapsed > safe_timeout) {
         INFO_MSG_YELLOW("[FSM] 轨迹超时结算。");

@@ -5,7 +5,7 @@ import signal
 import sys
 
 # ================= 配置区域 =================
-TOTAL_RUNS = 25         # 总共跑多少次
+TOTAL_RUNS = 100         # 总共跑多少次
 INIT_WAIT_TIME = 8       # NEW: 增加初始化时间，确保 TF 树完全建立 (建议 8-10s)
 SIM_DURATION = 12        # NEW: 增加仿真时长，确保降落动作完全结算
 LOG_FILE = "batch_test_log.txt" 

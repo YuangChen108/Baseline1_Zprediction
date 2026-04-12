@@ -5,8 +5,8 @@ import os
 
 def run_analysis():
     # 路径配置
-    base_path = "/home/Quadrotor-Landing-with-Minco/experiments_data/baseline_data_0.5_1.0.csv"
-    prop_path = "/home/Quadrotor-Landing-with-Minco/experiments_data/proposed_data_0.5_1.0.csv"
+    base_path = "/home/Baseline1_PhaseSelection/experiments_data/proposed_data_0.5_1.0.csv"
+    prop_path = "/home/Baseline1_PhaseSelection/experiments_data/Zprediction_0.5_1.0.csv"
     
     if not (os.path.exists(base_path) and os.path.exists(prop_path)):
         print("❌ 错误: 找不到 CSV 文件。")

@@ -215,33 +215,22 @@ struct Predict {
     return true;
   }
 
-  // ==================== CYRA_model (静态函数) ====================
+// ref: Vehicle Trajectory Prediction based on Motion Model and Maneuver Recognition
   static void CYRA_model(const State& state_in, const double& dT, State& state_out){
-    state_out = state_in;
+    state_out = state_in; // 🚀 这里隐式地继承了 state_in.p_.z() 和 state_in.vz_
     
-    // 水平运动
     state_out.v_ = state_in.v_ + state_in.a_ * dT;
-    if (std::abs(state_in.omega_) < 1e-2){
-      state_out.p_.x() = state_in.p_.x() + (0.5 * state_in.a_ * dT * dT + state_in.v_ * dT) * std::cos(state_in.theta_);
-      state_out.p_.y() = state_in.p_.y() + (0.5 * state_in.a_ * dT * dT + state_in.v_ * dT) * std::sin(state_in.theta_);
-      state_out.theta_ = state_in.theta_; 
+    if (abs(state_in.omega_) < 1e-2){
+      state_out.p_.x() = state_in.p_.x() + (0.5 * state_in.a_ * dT * dT + state_in.v_ * dT) * cos(state_in.theta_);
+      state_out.p_.y() = state_in.p_.y() + (0.5 * state_in.a_ * dT * dT + state_in.v_ * dT) * sin(state_in.theta_);
     }else{
-      double cx = state_in.p_.x() - (state_in.v_ / state_in.omega_) * std::sin(state_in.theta_) - (state_in.a_ / std::pow(state_in.omega_, 2)) * std::cos(state_in.theta_);
-      double cy = state_in.p_.y() + (state_in.v_ / state_in.omega_) * std::cos(state_in.theta_) - (state_in.a_ / std::pow(state_in.omega_, 2)) * std::sin(state_in.theta_);
+      double cx = state_in.p_.x() - (state_in.v_ / state_in.omega_) * sin(state_in.theta_) - (state_in.a_ / pow(state_in.omega_, 2)) * cos(state_in.theta_);
+      double cy = state_in.p_.y() + (state_in.v_ / state_in.omega_) * cos(state_in.theta_) - (state_in.a_ / pow(state_in.omega_, 2)) * sin(state_in.theta_);
 
       state_out.theta_ = state_in.theta_ + state_in.omega_ * dT;
-      state_out.p_.x() = (state_in.a_ / std::pow(state_in.omega_, 2)) * std::cos(state_out.theta_) + (state_out.v_ / state_in.omega_) * std::sin(state_out.theta_) + cx;
-      state_out.p_.y() = (state_in.a_ / std::pow(state_in.omega_, 2)) * std::sin(state_out.theta_) - (state_out.v_ / state_in.omega_) * std::cos(state_out.theta_) + cy;
+      state_out.p_.x() = (state_in.a_ / pow(state_in.omega_, 2)) * cos(state_out.theta_) + (state_out.v_ / state_in.omega_) * sin(state_out.theta_) + cx;
+      state_out.p_.y() = (state_in.a_ / pow(state_in.omega_, 2)) * sin(state_out.theta_) - (state_out.v_ / state_in.omega_) * cos(state_out.theta_) + cy;
     }
-
-    // 🚀 核心改动 3：引用静态函数 wave_freq_ref() 获取全局唯一的频率值
-    double w = 2.0 * M_PI * wave_freq_ref();
-    if (std::abs(w) < 1e-4) w = 1e-4; 
-
-    double dz = state_in.p_.z() - z_mean_ref();
-    
-    state_out.p_.z() = dz * std::cos(w * dT) + (state_in.vz_ / w) * std::sin(w * dT) + z_mean_ref();
-    state_out.vz_ = -dz * w * std::sin(w * dT) + state_in.vz_ * std::cos(w * dT);
   }
 
   // getPredState 接口

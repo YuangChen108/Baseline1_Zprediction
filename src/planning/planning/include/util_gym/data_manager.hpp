@@ -287,6 +287,10 @@ public:
     std::atomic_bool land_trigger_received_ = ATOMIC_VAR_INIT(false);
     std::atomic_bool map_received_ = ATOMIC_VAR_INIT(false);
 
+    // 🚀 给 Z 轴海浪数据开的专属绿色通道 (绕过 EKF)
+    std::atomic<double> raw_boat_z_{0.0};
+    std::atomic<double> raw_boat_vz_{0.0};
+
     // ekf attachment
     std::shared_ptr<ekf_server::EKFServer> car_ekf_ptr_;
 
@@ -412,18 +416,27 @@ public:
     // }
 
     bool get_car_odom(Odom& odom_data){
-        if (!car_ekf_ptr_->update_data_received()) return false;
-        Eigen::Vector3d p_pre, v_pre, a_pre, rpy_pre;
-        double omega_pre;
-        car_ekf_ptr_->get_predict_state(p_pre, v_pre, a_pre, rpy_pre, omega_pre);
-        odom_data.odom_p_ = p_pre;
-        odom_data.odom_v_ = v_pre;
-        odom_data.odom_a_ = a_pre;
-        odom_data.odom_q_ = rotation_util::RotUtil::euler2quaternion(rpy_pre);
-        odom_data.odom_dyaw_ = omega_pre;
-        odom_data.odom_time_stamp_ms_ = TimeNow();
-        return true;
-    }
+            if (!car_ekf_ptr_->update_data_received()) return false;
+            Eigen::Vector3d p_pre, v_pre, a_pre, rpy_pre;
+            double omega_pre;
+            car_ekf_ptr_->get_predict_state(p_pre, v_pre, a_pre, rpy_pre, omega_pre);
+            
+            odom_data.odom_p_ = p_pre;
+            odom_data.odom_v_ = v_pre;
+            odom_data.odom_a_ = a_pre;
+            odom_data.odom_q_ = rotation_util::RotUtil::euler2quaternion(rpy_pre);
+            odom_data.odom_dyaw_ = omega_pre;
+            odom_data.odom_time_stamp_ms_ = TimeNow();
+
+            // =========================================================
+            // 🚀 终极破案：强行覆盖！
+            // 让 XY 轴继续享受 EKF 的滤波，让 Z 轴直接使用 Python 传来的纯净真值
+            odom_data.odom_p_.z() = raw_boat_z_.load();
+            odom_data.odom_v_.z() = raw_boat_vz_.load();
+            // =========================================================
+
+            return true;
+        }
 
 public:
     #ifdef SS_DBUS
